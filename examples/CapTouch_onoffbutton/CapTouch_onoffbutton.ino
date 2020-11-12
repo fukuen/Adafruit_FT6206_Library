@@ -3,18 +3,20 @@
 //
 //Thanks to Adafruit forums member Asteroid for the original sketch!
 //
-#include <Adafruit_GFX.h>
-#include <SPI.h>
+#include <TFT_eSPI.h>
 #include <Wire.h>
-#include <Adafruit_ILI9341.h>
 #include <Adafruit_FT6206.h>
 
 // The FT6206 uses hardware I2C (SCL/SDA)
 Adafruit_FT6206 ts = Adafruit_FT6206();
 
-#define TFT_CS 10
-#define TFT_DC 9
-Adafruit_ILI9341 tft = Adafruit_ILI9341(TFT_CS, TFT_DC);
+#define AXP173_ADDR 0x34
+#ifdef MAIXAMIGO
+#define PIN_SDA 27
+#define PIN_SCL 24
+#endif
+
+TFT_eSPI tft = TFT_eSPI(); /* TFT instance */
 
 boolean RecordOn = false;
 
@@ -33,18 +35,63 @@ boolean RecordOn = false;
 #define GREENBUTTON_W (FRAME_W/2)
 #define GREENBUTTON_H FRAME_H
 
+void axp173_init() {
+    Wire.begin((uint8_t) PIN_SDA, (uint8_t) PIN_SCL, 400000);
+    Wire.beginTransmission(AXP173_ADDR);
+    int err = Wire.endTransmission();
+    if (err) {
+        Serial.printf("Power management ic not found.\n");
+        return;
+    }
+    Serial.printf("AXP173 found.\n");
+#ifdef MAIXAMIGO
+    //LDO4 - 0.8V (default 0x48 1.8V)
+    Wire.beginTransmission(AXP173_ADDR);
+    Wire.write(0x27);
+    Wire.write(0x20);
+    Wire.endTransmission();
+    //LDO2/3 - LDO2 1.8V / LDO3 3.0V
+    Wire.beginTransmission(AXP173_ADDR);
+    Wire.write(0x28);
+    Wire.write(0x0C);
+    Wire.endTransmission();
+#else
+    // Clear the interrupts
+    Wire.beginTransmission(AXP173_ADDR);
+    Wire.write(0x46);
+    Wire.write(0xFF);
+    Wire.endTransmission();
+    // set target voltage and current of battery(axp173 datasheet PG.)
+    // charge current (default)780mA -> 190mA
+    Wire.beginTransmission(AXP173_ADDR);
+    Wire.write(0x33);
+    Wire.write(0xC1);
+    Wire.endTransmission();
+    // REG 10H: EXTEN & DC-DC2 control
+    Wire.beginTransmission(AXP173_ADDR);
+    Wire.write(0x10);
+    Wire.endTransmission();
+    Wire.requestFrom(AXP173_ADDR, 1, 1);
+    int reg = Wire.read();
+    Wire.beginTransmission(AXP173_ADDR);
+    Wire.write(0x10);
+    Wire.write(reg & 0xFC);
+    Wire.endTransmission();
+#endif
+}
+
 void drawFrame()
 {
-  tft.drawRect(FRAME_X, FRAME_Y, FRAME_W, FRAME_H, ILI9341_BLACK);
+  tft.drawRect(FRAME_X, FRAME_Y, FRAME_W, FRAME_H, TFT_BLACK);
 }
 
 void redBtn()
 { 
-  tft.fillRect(REDBUTTON_X, REDBUTTON_Y, REDBUTTON_W, REDBUTTON_H, ILI9341_RED);
-  tft.fillRect(GREENBUTTON_X, GREENBUTTON_Y, GREENBUTTON_W, GREENBUTTON_H, ILI9341_BLUE);
+  tft.fillRect(REDBUTTON_X, REDBUTTON_Y, REDBUTTON_W, REDBUTTON_H, TFT_RED);
+  tft.fillRect(GREENBUTTON_X, GREENBUTTON_Y, GREENBUTTON_W, GREENBUTTON_H, TFT_BLUE);
   drawFrame();
   tft.setCursor(GREENBUTTON_X + 6 , GREENBUTTON_Y + (GREENBUTTON_H/2));
-  tft.setTextColor(ILI9341_WHITE);
+  tft.setTextColor(TFT_WHITE);
   tft.setTextSize(2);
   tft.println("ON");
   RecordOn = false;
@@ -52,11 +99,11 @@ void redBtn()
 
 void greenBtn()
 {
-  tft.fillRect(GREENBUTTON_X, GREENBUTTON_Y, GREENBUTTON_W, GREENBUTTON_H, ILI9341_GREEN);
-  tft.fillRect(REDBUTTON_X, REDBUTTON_Y, REDBUTTON_W, REDBUTTON_H, ILI9341_BLUE);
+  tft.fillRect(GREENBUTTON_X, GREENBUTTON_Y, GREENBUTTON_W, GREENBUTTON_H, TFT_GREEN);
+  tft.fillRect(REDBUTTON_X, REDBUTTON_Y, REDBUTTON_W, REDBUTTON_H, TFT_BLUE);
   drawFrame();
   tft.setCursor(REDBUTTON_X + 6 , REDBUTTON_Y + (REDBUTTON_H/2));
-  tft.setTextColor(ILI9341_WHITE);
+  tft.setTextColor(TFT_WHITE);
   tft.setTextSize(2);
   tft.println("OFF");
   RecordOn = true;
@@ -64,7 +111,9 @@ void greenBtn()
 
 void setup(void)
 {
-  Serial.begin(9600);
+  axp173_init();
+
+  Serial.begin(115200);
   tft.begin();
   if (!ts.begin(40)) { 
     Serial.println("Unable to start touchscreen.");
@@ -73,7 +122,7 @@ void setup(void)
     Serial.println("Touchscreen started."); 
   }
 
-  tft.fillScreen(ILI9341_BLACK);
+  tft.fillScreen(TFT_BLACK);
   // origin = left,top landscape (USB left upper)
   tft.setRotation(1); 
   redBtn();
@@ -88,8 +137,8 @@ void loop()
     TS_Point p = ts.getPoint(); 
     // rotate coordinate system
     // flip it around to match the screen.
-    p.x = map(p.x, 0, 240, 240, 0);
-    p.y = map(p.y, 0, 320, 320, 0);
+//    p.x = map(p.x, 0, 240, 240, 0);
+//    p.y = map(p.y, 0, 320, 320, 0);
     int y = tft.height() - p.x;
     int x = p.y;
 

@@ -54,7 +54,10 @@ Adafruit_FT6206::Adafruit_FT6206() { touches = 0; }
 */
 /**************************************************************************/
 boolean Adafruit_FT6206::begin(uint8_t thresh) {
-  Wire.begin();
+//  Wire.begin();
+#define PIN_SDA 27
+#define PIN_SCL 24
+  Wire.begin((uint8_t) PIN_SDA, (uint8_t) PIN_SCL, 400000);
 
 #ifdef FT6206_DEBUG
   Serial.print("Vend ID: 0x");

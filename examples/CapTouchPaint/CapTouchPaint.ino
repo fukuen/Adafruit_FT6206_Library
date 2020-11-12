@@ -1,41 +1,86 @@
 /***************************************************
-  This is our touchscreen painting example for the Adafruit ILI9341
+  This is our touchscreen painting example for the Adafruit TFT
   captouch shield
   ----> http://www.adafruit.com/products/1947
-
   Check out the links above for our tutorials and wiring diagrams
-
   Adafruit invests time and resources providing this open source code,
   please support Adafruit and open-source hardware by purchasing
   products from Adafruit!
-
   Written by Limor Fried/Ladyada for Adafruit Industries.
   MIT license, all text above must be included in any redistribution
  ****************************************************/
 
 
-#include <Adafruit_GFX.h>    // Core graphics library
-#include <SPI.h>       // this is needed for display
-#include <Adafruit_ILI9341.h>
+#include <TFT_eSPI.h>
 #include <Wire.h>      // this is needed for FT6206
 #include <Adafruit_FT6206.h>
 
+#define AXP173_ADDR 0x34
+#ifdef MAIXAMIGO
+#define PIN_SDA 27
+#define PIN_SCL 24
+#endif
+
+TFT_eSPI tft = TFT_eSPI(); /* TFT instance */
+
 // The FT6206 uses hardware I2C (SCL/SDA)
 Adafruit_FT6206 ctp = Adafruit_FT6206();
-
-// The display also uses hardware SPI, plus #9 & #10
-#define TFT_CS 10
-#define TFT_DC 9
-Adafruit_ILI9341 tft = Adafruit_ILI9341(TFT_CS, TFT_DC);
 
 // Size of the color selection boxes and the paintbrush size
 #define BOXSIZE 40
 #define PENRADIUS 3
 int oldcolor, currentcolor;
 
+void axp173_init() {
+    Wire.begin((uint8_t) PIN_SDA, (uint8_t) PIN_SCL, 400000);
+    Wire.beginTransmission(AXP173_ADDR);
+    int err = Wire.endTransmission();
+    if (err) {
+        Serial.printf("Power management ic not found.\n");
+        return;
+    }
+    Serial.printf("AXP173 found.\n");
+#ifdef MAIXAMIGO
+    //LDO4 - 0.8V (default 0x48 1.8V)
+    Wire.beginTransmission(AXP173_ADDR);
+    Wire.write(0x27);
+    Wire.write(0x20);
+    Wire.endTransmission();
+    //LDO2/3 - LDO2 1.8V / LDO3 3.0V
+    Wire.beginTransmission(AXP173_ADDR);
+    Wire.write(0x28);
+    Wire.write(0x0C);
+    Wire.endTransmission();
+#else
+    // Clear the interrupts
+    Wire.beginTransmission(AXP173_ADDR);
+    Wire.write(0x46);
+    Wire.write(0xFF);
+    Wire.endTransmission();
+    // set target voltage and current of battery(axp173 datasheet PG.)
+    // charge current (default)780mA -> 190mA
+    Wire.beginTransmission(AXP173_ADDR);
+    Wire.write(0x33);
+    Wire.write(0xC1);
+    Wire.endTransmission();
+    // REG 10H: EXTEN & DC-DC2 control
+    Wire.beginTransmission(AXP173_ADDR);
+    Wire.write(0x10);
+    Wire.endTransmission();
+    Wire.requestFrom(AXP173_ADDR, 1, 1);
+    int reg = Wire.read();
+    Wire.beginTransmission(AXP173_ADDR);
+    Wire.write(0x10);
+    Wire.write(reg & 0xFC);
+    Wire.endTransmission();
+#endif
+}
+
 void setup(void) {
-  while (!Serial);     // used for leonardo debugging
- 
+//  while (!Serial);     // used for leonardo debugging
+
+  axp173_init();
+  
   Serial.begin(115200);
   Serial.println(F("Cap Touch Paint!"));
   
@@ -48,19 +93,19 @@ void setup(void) {
 
   Serial.println("Capacitive touchscreen started");
   
-  tft.fillScreen(ILI9341_BLACK);
+  tft.fillScreen(TFT_BLACK);
   
   // make the color selection boxes
-  tft.fillRect(0, 0, BOXSIZE, BOXSIZE, ILI9341_RED);
-  tft.fillRect(BOXSIZE, 0, BOXSIZE, BOXSIZE, ILI9341_YELLOW);
-  tft.fillRect(BOXSIZE*2, 0, BOXSIZE, BOXSIZE, ILI9341_GREEN);
-  tft.fillRect(BOXSIZE*3, 0, BOXSIZE, BOXSIZE, ILI9341_CYAN);
-  tft.fillRect(BOXSIZE*4, 0, BOXSIZE, BOXSIZE, ILI9341_BLUE);
-  tft.fillRect(BOXSIZE*5, 0, BOXSIZE, BOXSIZE, ILI9341_MAGENTA);
+  tft.fillRect(0, 0, BOXSIZE, BOXSIZE, TFT_RED);
+  tft.fillRect(BOXSIZE, 0, BOXSIZE, BOXSIZE, TFT_YELLOW);
+  tft.fillRect(BOXSIZE*2, 0, BOXSIZE, BOXSIZE, TFT_GREEN);
+  tft.fillRect(BOXSIZE*3, 0, BOXSIZE, BOXSIZE, TFT_CYAN);
+  tft.fillRect(BOXSIZE*4, 0, BOXSIZE, BOXSIZE, TFT_BLUE);
+  tft.fillRect(BOXSIZE*5, 0, BOXSIZE, BOXSIZE, TFT_MAGENTA);
  
   // select the current color 'red'
-  tft.drawRect(0, 0, BOXSIZE, BOXSIZE, ILI9341_WHITE);
-  currentcolor = ILI9341_RED;
+  tft.drawRect(0, 0, BOXSIZE, BOXSIZE, TFT_WHITE);
+  currentcolor = TFT_RED;
 }
 
 void loop() {
@@ -80,8 +125,8 @@ void loop() {
  */
 
   // flip it around to match the screen.
-  p.x = map(p.x, 0, 240, 240, 0);
-  p.y = map(p.y, 0, 320, 320, 0);
+//  p.x = map(p.x, 0, 320, 320, 0);
+//  p.y = map(p.y, 0, 480, 480, 0);
 
   // Print out the remapped (rotated) coordinates
   Serial.print("("); Serial.print(p.x);
@@ -93,38 +138,38 @@ void loop() {
      oldcolor = currentcolor;
 
      if (p.x < BOXSIZE) { 
-       currentcolor = ILI9341_RED; 
-       tft.drawRect(0, 0, BOXSIZE, BOXSIZE, ILI9341_WHITE);
+       currentcolor = TFT_RED; 
+       tft.drawRect(0, 0, BOXSIZE, BOXSIZE, TFT_WHITE);
      } else if (p.x < BOXSIZE*2) {
-       currentcolor = ILI9341_YELLOW;
-       tft.drawRect(BOXSIZE, 0, BOXSIZE, BOXSIZE, ILI9341_WHITE);
+       currentcolor = TFT_YELLOW;
+       tft.drawRect(BOXSIZE, 0, BOXSIZE, BOXSIZE, TFT_WHITE);
      } else if (p.x < BOXSIZE*3) {
-       currentcolor = ILI9341_GREEN;
-       tft.drawRect(BOXSIZE*2, 0, BOXSIZE, BOXSIZE, ILI9341_WHITE);
+       currentcolor = TFT_GREEN;
+       tft.drawRect(BOXSIZE*2, 0, BOXSIZE, BOXSIZE, TFT_WHITE);
      } else if (p.x < BOXSIZE*4) {
-       currentcolor = ILI9341_CYAN;
-       tft.drawRect(BOXSIZE*3, 0, BOXSIZE, BOXSIZE, ILI9341_WHITE);
+       currentcolor = TFT_CYAN;
+       tft.drawRect(BOXSIZE*3, 0, BOXSIZE, BOXSIZE, TFT_WHITE);
      } else if (p.x < BOXSIZE*5) {
-       currentcolor = ILI9341_BLUE;
-       tft.drawRect(BOXSIZE*4, 0, BOXSIZE, BOXSIZE, ILI9341_WHITE);
+       currentcolor = TFT_BLUE;
+       tft.drawRect(BOXSIZE*4, 0, BOXSIZE, BOXSIZE, TFT_WHITE);
      } else if (p.x <= BOXSIZE*6) {
-       currentcolor = ILI9341_MAGENTA;
-       tft.drawRect(BOXSIZE*5, 0, BOXSIZE, BOXSIZE, ILI9341_WHITE);
+       currentcolor = TFT_MAGENTA;
+       tft.drawRect(BOXSIZE*5, 0, BOXSIZE, BOXSIZE, TFT_WHITE);
      }
 
      if (oldcolor != currentcolor) {
-        if (oldcolor == ILI9341_RED) 
-          tft.fillRect(0, 0, BOXSIZE, BOXSIZE, ILI9341_RED);
-        if (oldcolor == ILI9341_YELLOW) 
-          tft.fillRect(BOXSIZE, 0, BOXSIZE, BOXSIZE, ILI9341_YELLOW);
-        if (oldcolor == ILI9341_GREEN) 
-          tft.fillRect(BOXSIZE*2, 0, BOXSIZE, BOXSIZE, ILI9341_GREEN);
-        if (oldcolor == ILI9341_CYAN) 
-          tft.fillRect(BOXSIZE*3, 0, BOXSIZE, BOXSIZE, ILI9341_CYAN);
-        if (oldcolor == ILI9341_BLUE) 
-          tft.fillRect(BOXSIZE*4, 0, BOXSIZE, BOXSIZE, ILI9341_BLUE);
-        if (oldcolor == ILI9341_MAGENTA) 
-          tft.fillRect(BOXSIZE*5, 0, BOXSIZE, BOXSIZE, ILI9341_MAGENTA);
+        if (oldcolor == TFT_RED) 
+          tft.fillRect(0, 0, BOXSIZE, BOXSIZE, TFT_RED);
+        if (oldcolor == TFT_YELLOW) 
+          tft.fillRect(BOXSIZE, 0, BOXSIZE, BOXSIZE, TFT_YELLOW);
+        if (oldcolor == TFT_GREEN) 
+          tft.fillRect(BOXSIZE*2, 0, BOXSIZE, BOXSIZE, TFT_GREEN);
+        if (oldcolor == TFT_CYAN) 
+          tft.fillRect(BOXSIZE*3, 0, BOXSIZE, BOXSIZE, TFT_CYAN);
+        if (oldcolor == TFT_BLUE) 
+          tft.fillRect(BOXSIZE*4, 0, BOXSIZE, BOXSIZE, TFT_BLUE);
+        if (oldcolor == TFT_MAGENTA) 
+          tft.fillRect(BOXSIZE*5, 0, BOXSIZE, BOXSIZE, TFT_MAGENTA);
      }
   }
   if (((p.y-PENRADIUS) > BOXSIZE) && ((p.y+PENRADIUS) < tft.height())) {
